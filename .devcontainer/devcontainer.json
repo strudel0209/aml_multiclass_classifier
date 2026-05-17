@@ -1,0 +1,35 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the
+// README at: https://github.com/devcontainers/templates/tree/main/src/python
+{
+	"name": "Python 3",
+  	"image": "mcr.microsoft.com/devcontainers/python:3.13-bookworm",
+
+  "features": {
+    // Node 22 LTS — installs node + npm + npx
+    // Required to launch the filesystem & sequential-thinking MCP servers via `npx -y ...`
+    "ghcr.io/devcontainers/features/node:2.0.0": {
+      "version": "22",
+      "nodeGypDependencies": true
+    },
+    // Azure CLI + ml extension — for AML v2 work
+    "ghcr.io/devcontainers/features/azure-cli:1": { "extensions": "ml" },
+    // gh CLI — pairs with the GitHub MCP
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "github.copilot",
+        "github.copilot-chat",
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-toolsai.jupyter",
+        "ms-azuretools.vscode-azureml",
+        "redhat.vscode-yaml"
+      ]
+    }
+  },
+
+  "remoteUser": "vscode"
+}

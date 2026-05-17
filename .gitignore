@@ -1,0 +1,40 @@
+# ── Datasets — shipped separately, not in git ───────────────────────────────
+# Training and holdout CSVs are uploaded to the AML datastore directly.
+*.csv
+*.jsonl
+!sample_emails.jsonl   # keep the small smoke-test fixture
+
+# ── Local model artefacts & evaluation output ───────────────────────────────
+outputs/
+outputs-*/
+holdout-eval-outputs/
+mlruns/
+*.safetensors
+*.bin
+*.pt
+*.pth
+
+# ── Python ──────────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.ipynb_checkpoints/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# ── Editor / OS ─────────────────────────────────────────────────────────────
+.vscode/
+.github/
+.idea/
+.DS_Store
+Thumbs.db
+
+# ── Secrets / local env ─────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem

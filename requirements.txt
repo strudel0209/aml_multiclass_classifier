@@ -1,0 +1,14 @@
+azure-ai-ml
+azure-identity
+datasets>=4.7.0
+transformers>=4.46.0      # 4.46+ required for ModernBERT-base support
+accelerate>=1.13.0
+scikit-learn>=1.7.0
+numpy<2
+ipykernel
+torch>=2.10.0
+protobuf>=4.25.0
+sentencepiece>=0.1.99
+mlflow>=3.10.1
+azureml-mlflow
+safetensors>=0.4.0
