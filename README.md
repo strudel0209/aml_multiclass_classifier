@@ -23,7 +23,7 @@ cd <repo-folder>
 Two CSV files are shipped separately (not in git):
 
 - `dataset_onlyWithImoUntil2023.csv` — training set (pre-2023, `;`-separated)
-- `dataset_onlyWithImoFrom2023.csv` — temporal holdout (post-2023, `;`-separated), used only in Phase H evaluation
+- `dataset_onlyWithImoFrom2023.csv` — temporal holdout (post-2023, `;`-separated), used only for evaluation
 
 Drag-and-drop both files into the compute instance's home directory via AML Studio's file browser, or upload them to the workspace default datastore.
 
