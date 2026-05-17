@@ -1,5 +1,35 @@
 # Azure Machine Learning - Email to IMO Classifier
 
+## Corpus language profile
+
+Before picking encoder candidates we ran a `langdetect` diagnostic over a 1000-row random sample (seed 42) of `dataset_onlyWithImoUntil2023.csv` (114 181 total rows). Bracket tokens (`[SUBJECT]` / `[FROM]` / `[ATTACH]` / `[BODY]`), email addresses and URLs were stripped before detection to avoid ASCII bias.
+
+| Language | Count | Share |
+|---|---:|---:|
+| en (English)    | 925 | 92.50 % |
+| no (Norwegian)  |  38 |  3.80 % |
+| fi (Finnish)    |  12 |  1.20 % |
+| fr (French)     |  10 |  1.00 % |
+| it (Italian)    |   5 |  0.50 % |
+| da (Danish)     |   4 |  0.40 % |
+| et, sv, pt, nl, es, ru (1 each) | 6 | 0.60 % |
+| **Non-English total** | **75** | **7.50 %** |
+
+Sample texts confirmed the non-English rows are legitimate operational content (Norwegian alarm message, Finnish ABB technician note, French quote request, Italian printer issue, Russian Norilsk Nickel inquiry) rather than detector noise.
+
+**Decision (borderline 5–15 % zone):** an English-only encoder is probably acceptable, but the dataset has enough multilingual tail to justify comparing one multilingual candidate. The bake-off in the AML notebook ("Architecture bake-off" section) trains four candidates in parallel on identical splits and aggregates results in a single MLflow comparison table:
+
+| Candidate | HF model ID | Role | Notes |
+|---|---|---|---|
+| ModernBERT-base   | `answerdotai/ModernBERT-base`   | Baseline           | Current production model (149 M, 8192 ctx) |
+| ModernBERT-large  | `answerdotai/ModernBERT-large`  | Scale comparison   | ~395 M params; tests whether capacity helps |
+| DeBERTa-v3-base   | `microsoft/deberta-v3-base`     | Short-ctx control  | 184 M, 512 ctx — strong even with truncation |
+| EuroBERT-210M     | `EuroBERT/EuroBERT-210M`        | Multilingual probe | Covers the 7.5 % non-English tail |
+
+Estimated bake-off cost on `Standard_NC64as_T4_v3`: ~25–40 USD wall-clock.
+
+---
+
 ## Customer Quickstart
 
 This section is the minimum set of steps to reproduce the pipeline on a fresh Azure ML workspace. Estimated wall time: ~10 minutes of setup, then 2–4 hours for the training job on 4× T4.

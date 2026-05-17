@@ -49,6 +49,8 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="IMO multi-class classifier training")
     p.add_argument("--data",         required=True,                         help="Path to training CSV (£-separated)")
     p.add_argument("--model-name",   default="answerdotai/ModernBERT-base", help="HuggingFace model ID")
+    p.add_argument("--arch-alias",   default="",                             help="Short alias for the architecture (e.g. modernbert-base, deberta-v3-base) — logged as MLflow param/tag for bake-off comparisons. Defaults to the basename of --model-name.")
+    p.add_argument("--registered-model-name", default="imo-extractor-model",  help="Name under which to register the trained model in the AML model registry.")
     p.add_argument("--output-dir",   default="./outputs-ModernBERT",        help="Where to save checkpoints and final model")
     p.add_argument("--epochs",       type=int,   default=15)
     p.add_argument("--batch-size",   type=int,   default=8)
@@ -273,11 +275,16 @@ def main():
     # the other ranks participate in training/eval but must not log or save.
     is_main_process = int(os.environ.get("RANK", "0")) == 0
 
+    # Default the alias to the HF model basename so single-model runs still log a clean value.
+    arch_alias = args.arch_alias or args.model_name.rsplit("/", 1)[-1].lower()
+
     if is_main_process:
         mlflow.set_experiment(os.getenv("MLFLOW_EXPERIMENT_NAME", "imo-extractor-experiment"))
         mlflow.start_run()
         mlflow.log_params({
             "model_name":    args.model_name,
+            "arch_alias":    arch_alias,
+            "registered_model_name": args.registered_model_name,
             "epochs":        args.epochs,
             "batch_size":    args.batch_size,
             "lr":            args.lr,
@@ -285,6 +292,7 @@ def main():
             "min_examples":  args.min_examples,
             "test_size":     args.test_size,
         })
+        mlflow.set_tag("arch_alias", arch_alias)
 
     # ── Load & preprocess ──────────────────────────────────────────────────────
     dataset, label_to_id, id_to_label, num_labels, imo_counts, frequent_imos = \
@@ -454,7 +462,7 @@ def main():
         mlflow.transformers.log_model(
             transformers_model={"model": trainer.model, "tokenizer": tokenizer},
             artifact_path="imo-classifier",
-            registered_model_name="imo-extractor-model",
+            registered_model_name=args.registered_model_name,
             task="text-classification",
         )
 
