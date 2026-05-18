@@ -30,14 +30,109 @@ Estimated bake-off cost on `Standard_NC64as_T4_v3`: ~25–40 USD wall-clock.
 
 ---
 
+## Prerequisites
+
+Everything the customer must have provisioned **before** opening the notebook. Roughly 30 minutes of one-off setup if the Azure subscription is new; near-zero if the workspace already exists.
+
+### A. Azure subscription & identity
+
+| Requirement | Purpose | How to check |
+|---|---|---|
+| Active Azure subscription | Hosts the AML workspace and GPU quotas | `az account show` |
+| Owner or Contributor on the target resource group | Create workspace + storage + ACR + endpoint | `az role assignment list --assignee <upn> -g <rg>` |
+| Subscription registered for `Microsoft.MachineLearningServices` | Required to create AML resources | `az provider show -n Microsoft.MachineLearningServices --query registrationState` |
+
+### B. Azure ML workspace
+
+A single AML workspace in a region where T4 quota is available (e.g. `westeurope`, `eastus`, `eastus2`, `northeurope`). The workspace must have the four standard companion resources attached — they are auto-created by `az ml workspace create` if missing:
+
+| Companion resource | Used for |
+|---|---|
+| Storage Account (blob)                | Dataset upload + job code snapshot + MLflow artifacts |
+| Key Vault                             | Endpoint scoring auth keys |
+| Application Insights                  | Job + endpoint telemetry |
+| Azure Container Registry (ACR), Premium SKU recommended | Stores the built training/inference Docker images |
+
+One-shot creation (skip if already present):
+
+```bash
+az group create -n <rg> -l <region>
+az ml workspace create -n <workspace> -g <rg> -l <region>
+```
+
+### C. GPU quota
+
+Both SKUs below must show non-zero `Limit` in your target region. Request quota via **Azure Portal → Subscriptions → Usage + quotas → Compute** (typical SLA: same business day):
+
+| SKU | Used for | vCPU quota family | Min cores needed |
+|---|---|---:|---:|
+| `Standard_NC64as_T4_v3` | Training cluster (4× T4)   | `Standard NCASv3_T4 Family vCPUs` | 64 |
+| `Standard_NC16as_T4_v3` | Inference endpoint (1× T4) | `Standard NCASv3_T4 Family vCPUs` | 16 |
+
+A quick check from the CLI:
+
+```bash
+az vm list-usage -l <region> --query "[?contains(name.value,'standardNCASv3T4Family')]"
+```
+
+### D. Compute instance (for running the notebook)
+
+The orchestration notebook runs on an AML **compute instance** — not on the GPU cluster. The compute instance does **not** need a GPU:
+
+| Item | Recommendation |
+|---|---|
+| SKU                  | `Standard_DS3_v2` (4 vCPU / 14 GB) or larger CPU SKU |
+| Image                | Default AML Python 3.10 image (ships `azure-ai-ml`, `azureml-mlflow`, `mlflow`, `ipykernel` pre-installed) |
+| Managed identity     | System-assigned, with **AzureML Data Scientist** role on the workspace |
+| Network              | Public endpoint OK for first run; behind workspace-managed VNet is also supported |
+
+Create from the AML Studio UI ("Compute → Compute instances → + New") or via CLI:
+
+```bash
+az ml compute create -n <ci-name> --type ComputeInstance --size Standard_DS3_v2
+```
+
+### E. Python packages
+
+Three dependency surfaces, each pinned independently because they target different runtimes:
+
+| File | Where it runs | What it installs |
+|---|---|---|
+| **First cell of the notebook** (`%pip install ...`) | Compute instance kernel | Same set as `requirements.txt` — enough to execute every notebook cell end-to-end |
+| [`requirements.txt`](requirements.txt) | Compute instance (fallback / local dev) | `torch>=2.10`, `transformers>=4.46` (5.x OK), `accelerate>=1.13`, `datasets>=4.7`, `scikit-learn>=1.7`, `mlflow>=3.10.1`, `azure-ai-ml`, `azure-identity`, `azureml-mlflow`, `safetensors`, `sentencepiece`, `protobuf>=4.25`, `numpy<2`, `ipykernel` |
+| [`conda.yml`](conda.yml) | AML training/inference Docker image (built once, reused by every job) | Same packages on `python=3.10` — baked into the curated image `mcr.microsoft.com/azureml/openmpi5.0-cuda12.4-cudnn9-ubuntu22.04:latest` |
+| [`requirements.inference.txt`](requirements.inference.txt) | Online endpoint container | Inference-only subset — no `azure-ai-ml`, no `datasets` |
+
+The notebook's first cell is idempotent (skips packages that are already at the right version), so re-running it after a kernel restart is safe.
+
+### F. Optional but recommended for the bake-off
+
+| Item | Why |
+|---|---|
+| Cluster `max_instances=4` instead of `1` (in the AML Command Job cell) | Lets the four bake-off candidates train in parallel; same total cost, ~4× faster wall-clock |
+| `langdetect` in the kernel | Only needed if you want to re-run the corpus-language diagnostic; not required for training or deployment |
+
+### G. Files shipped separately from git
+
+These are **not** in the repo (they are customer data) but must exist in the working directory before submitting the AML Command Job:
+
+- `dataset_onlyWithImoUntil2023.csv` — training set (`;`-separated)
+- `dataset_onlyWithImoFrom2023.csv` — temporal holdout (`;`-separated), evaluation only
+
+Upload via AML Studio's file browser, `azcopy`, or drag-and-drop into the compute instance.
+
+---
+
 ## Customer Quickstart
 
 This section is the minimum set of steps to reproduce the pipeline on a fresh Azure ML workspace. Estimated wall time: ~10 minutes of setup, then 2–4 hours for the training job on 4× T4.
 
 ### 1. Prerequisites
 
-- Azure ML workspace in a region where you have GPU quota for `Standard_NC64as_T4_v3` (training, 4× T4) **and** `Standard_NC16as_T4_v3` (inference, 1× T4).
-- An AML **compute instance** (any CPU SKU — e.g. `Standard_DS3_v2`) to host the orchestration notebook. The compute instance does **not** need a GPU; the GPUs are provisioned on demand by the AML Command Job and the online endpoint.
+See the [Prerequisites](#prerequisites) section above for the complete checklist (subscription, workspace, GPU quota, compute instance, package surfaces). Bare minimum to proceed:
+
+- AML workspace in a region with quota for `Standard_NC64as_T4_v3` **and** `Standard_NC16as_T4_v3`.
+- An AML compute instance (any CPU SKU, e.g. `Standard_DS3_v2`) with **AzureML Data Scientist** role.
 
 ### 2. Clone the repository
 
