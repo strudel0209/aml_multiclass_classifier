@@ -28,7 +28,7 @@ import numpy as np
 import pandas as pd
 import torch
 from datasets import Dataset
-from sklearn.metrics import accuracy_score, f1_score
+from sklearn.metrics import accuracy_score, f1_score, matthews_corrcoef, precision_score, recall_score
 from sklearn.model_selection import train_test_split as sk_split
 from torch import nn
 from transformers import (
@@ -242,9 +242,16 @@ def make_compute_metrics():
     def compute_metrics(eval_pred):
         logits, labels = eval_pred
         preds = np.argmax(logits, axis=1)
+        # NOTE: precision/recall/MCC are added on top of accuracy+f1 to give the
+        # customer the same metric panel they had in the legacy notebook
+        # (success rate / precision / recall / F1 / MCC). All averages are
+        # 'weighted' to be robust to class imbalance on the long-tailed labelset.
         return {
-            "accuracy": accuracy_score(labels, preds),
-            "f1":       f1_score(labels, preds, average="weighted"),
+            "accuracy":           accuracy_score(labels, preds),
+            "f1":                 f1_score(labels, preds, average="weighted"),
+            "precision_weighted": precision_score(labels, preds, average="weighted", zero_division=0),
+            "recall_weighted":    recall_score(labels, preds, average="weighted", zero_division=0),
+            "mcc":                matthews_corrcoef(labels, preds),
         }
     return compute_metrics
 
@@ -453,8 +460,11 @@ def main():
             }, f, indent=2)
 
         mlflow.log_metrics({
-            "final_eval_accuracy": metrics.get("eval_accuracy", 0),
-            "final_eval_f1":       metrics.get("eval_f1", 0),
+            "final_eval_accuracy":           metrics.get("eval_accuracy", 0),
+            "final_eval_f1":                 metrics.get("eval_f1", 0),
+            "final_eval_precision_weighted": metrics.get("eval_precision_weighted", 0),
+            "final_eval_recall_weighted":    metrics.get("eval_recall_weighted", 0),
+            "final_eval_mcc":                metrics.get("eval_mcc", 0),
         })
         mlflow.log_artifact(str(final_dir / "label_map.json"))
 
@@ -468,7 +478,11 @@ def main():
 
         mlflow.end_run()
         print(f"\n✓ Training complete. Final model saved to: {final_dir}")
-        print(f"  eval_accuracy={metrics.get('eval_accuracy', 0):.4f}  eval_f1={metrics.get('eval_f1', 0):.4f}")
+        print(f"  eval_accuracy={metrics.get('eval_accuracy', 0):.4f}  "
+              f"eval_f1={metrics.get('eval_f1', 0):.4f}  "
+              f"eval_precision={metrics.get('eval_precision_weighted', 0):.4f}  "
+              f"eval_recall={metrics.get('eval_recall_weighted', 0):.4f}  "
+              f"eval_mcc={metrics.get('eval_mcc', 0):.4f}")
 
 
 if __name__ == "__main__":

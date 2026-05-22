@@ -1,0 +1,66 @@
+$schema: https://azuremlschemas.azureedge.net/latest/commandJob.schema.json
+# ──────────────────────────────────────────────────────────────────────────────
+# Single-GPU cluster job — fits inside a 20-core T4 quota.
+#
+# Use this when the customer's `Standard NCASv3_T4 Family Cluster Dedicated
+# vCPUs` quota is < 64 (so Standard_NC64as_T4_v3 can't be provisioned).
+# Standard_NC16as_T4_v3 has 1× T4 / 16 cores → fits in 20.
+#
+# Trade-off vs job.cluster.yml: ~4× wall-clock (no DDP), but no quota request
+# needed and same final metrics (single-GPU vs 4-GPU DDP are mathematically
+# equivalent at the same effective batch size).
+#
+# Create the cluster once:
+#   az ml compute create \
+#       --name gpu-t4-single \
+#       --type AmlCompute \
+#       --size Standard_NC16as_T4_v3 \
+#       --min-instances 0 --max-instances 1 \
+#       --idle-time-before-scale-down 300
+#
+# Submit:
+#   az ml job create -f aml/job.cluster.single.yml --web --stream
+# ──────────────────────────────────────────────────────────────────────────────
+
+display_name: modernbert-imo-1gpu
+experiment_name: imo-extractor-experiment
+description: ModernBERT-base fine-tuning on 1× T4 (Standard_NC16as_T4_v3, fits 20-core quota).
+
+code: ../
+command: >-
+  torchrun --standalone --nproc_per_node=1 train.py
+  --data ${{inputs.training_data}}
+  --csv-sep ';'
+  --model-name answerdotai/ModernBERT-base
+  --output-dir ${{outputs.model_dir}}
+  --epochs 15
+  --batch-size 8
+  --lr 6e-5
+  --max-seq-len 2048
+  --min-examples 20
+
+environment: azureml:imo-classifier-train-env@latest
+compute: azureml:gpu-t4-single
+
+resources:
+  instance_count: 1
+
+inputs:
+  training_data:
+    type: uri_file
+    path: azureml:email-imo-training-data@latest
+    mode: ro_mount
+
+outputs:
+  model_dir:
+    type: uri_folder
+
+environment_variables:
+  HF_HOME: /tmp/hf
+  MLFLOW_EXPERIMENT_NAME: imo-extractor-experiment
+
+tags:
+  model: answerdotai/ModernBERT-base
+  task: imo-classification
+  dataset: email-imo-training-data
+  training: 1-gpu

@@ -39,7 +39,13 @@ import mlflow
 import numpy as np
 import pandas as pd
 import torch
-from sklearn.metrics import precision_recall_fscore_support
+from sklearn.metrics import (
+    f1_score,
+    matthews_corrcoef,
+    precision_recall_fscore_support,
+    precision_score,
+    recall_score,
+)
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 # Reuse the *exact* preprocessing helpers used by train.py / score.py.
@@ -333,6 +339,42 @@ def main() -> None:
     )
     reliability_df.to_csv(output_dir / "reliability_diagram.csv", index=False)
 
+    # ── Customer-parity block (matches the panel from the legacy ConSol PyTorch
+    # notebook so the customer can read familiar numbers side-by-side with the
+    # new Tier-5 acceptance metrics). Computed over named in-distribution rows —
+    # the apples-to-apples cohort vs. the legacy notebook, which filtered to
+    # known vessels via `data[data['vessel'].isin(known_vessels)]`. Confidences
+    # are reported in percent (0-100) to match the legacy print format.
+    if len(in_dist) > 0:
+        parity_correct       = in_dist["correct"].astype(bool).to_numpy()
+        parity_conf_pct      = in_dist["pred_conf"].astype(float).to_numpy() * 100.0
+        parity_y_true        = in_dist["label_imo"].to_numpy()
+        parity_y_pred        = in_dist["pred_label"].to_numpy()
+
+        parity_n             = int(len(in_dist))
+        parity_success_rate  = float(parity_correct.mean() * 100.0)
+        parity_avg_conf      = float(parity_conf_pct.mean())
+        parity_avg_conf_correct = (
+            float(parity_conf_pct[parity_correct].mean())
+            if parity_correct.any() else float("nan")
+        )
+        parity_max_conf_wrong = (
+            float(parity_conf_pct[~parity_correct].max())
+            if (~parity_correct).any() else float("nan")
+        )
+        parity_n_correct_ge70 = int(((parity_conf_pct >= 70.0) & parity_correct).sum())
+        parity_pct_correct_ge70 = float(parity_n_correct_ge70 / parity_n * 100.0)
+        parity_mcc       = float(matthews_corrcoef(parity_y_true, parity_y_pred))
+        parity_precision = float(precision_score(parity_y_true, parity_y_pred, average="weighted", zero_division=0))
+        parity_recall    = float(recall_score(parity_y_true, parity_y_pred, average="weighted", zero_division=0))
+        parity_f1        = float(f1_score(parity_y_true, parity_y_pred, average="weighted", zero_division=0))
+    else:
+        parity_n = 0
+        parity_success_rate = parity_avg_conf = parity_avg_conf_correct = \
+            parity_max_conf_wrong = parity_pct_correct_ge70 = parity_mcc = \
+            parity_precision = parity_recall = parity_f1 = float("nan")
+        parity_n_correct_ge70 = 0
+
     # ── Top-K confusion pairs ─────────────────────────────────────────────────
     confusion = (
         in_dist[in_dist["pred_label"] != in_dist["label_imo"]]
@@ -372,6 +414,18 @@ def main() -> None:
         "f1_p90_named":                  f1_p90,
         "ece_neural_10bin":              ece,
         "min_confidence":                args.min_confidence,
+        # ── Customer-parity panel (legacy ConSol notebook field names) ────
+        "parity_n":                      parity_n,
+        "parity_success_rate_pct":       parity_success_rate,
+        "parity_avg_confidence_pct":     parity_avg_conf,
+        "parity_avg_conf_correct_pct":   parity_avg_conf_correct,
+        "parity_max_conf_incorrect_pct": parity_max_conf_wrong,
+        "parity_n_correct_ge70":         parity_n_correct_ge70,
+        "parity_pct_correct_ge70":       parity_pct_correct_ge70,
+        "parity_mcc":                    parity_mcc,
+        "parity_precision_weighted":     parity_precision,
+        "parity_recall_weighted":        parity_recall,
+        "parity_f1_weighted":            parity_f1,
     }
     (output_dir / "summary.json").write_text(json.dumps(summary, indent=2))
 
@@ -381,6 +435,22 @@ def main() -> None:
             print(f"  {k:<32s} {v:.4f}")
         else:
             print(f"  {k:<32s} {v}")
+    print("──────────────────────────────────────────────────────────────")
+
+    # ── Customer-parity panel: same lines as the legacy ConSol notebook ───
+    print("\n── Customer-parity panel (named in-dist rows) ────────────────")
+    print(f"  Number of emails checked: {parity_n}")
+    print(f"  Success rate: {parity_success_rate:.2f}%")
+    print(f"  Average confidence score: {parity_avg_conf:.2f}%")
+    print(f"  Average confidence score for correct predictions: {parity_avg_conf_correct:.2f}%")
+    if not np.isnan(parity_max_conf_wrong):
+        print(f"  Highest confidence score for incorrect predictions: {parity_max_conf_wrong:.2f}%")
+    else:
+        print("  There are no incorrect predictions.")
+    print(f"  Number of correct predictions with confidence score above 70%: "
+          f"{parity_n_correct_ge70}. That is a {parity_pct_correct_ge70:.2f}% score totally.")
+    print(f"  Matthews Correlation Coefficient (MCC): {parity_mcc:.4f}")
+    print(f"  Precision: {parity_precision:.4f}, Recall: {parity_recall:.4f}, F1 Score: {parity_f1:.4f}")
     print("──────────────────────────────────────────────────────────────")
 
     # ── MLflow logging ────────────────────────────────────────────────────────

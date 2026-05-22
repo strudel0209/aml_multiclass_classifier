@@ -1,0 +1,8 @@
+$schema: https://azuremlschemas.azureedge.net/latest/data.schema.json
+# Registers the small / debug training CSV as a versioned AML data asset.
+# Re-run to bump the version:
+#   az ml data create -f aml/data.yml --set version=$(date +%Y%m%d%H%M)
+name: email-imo-training-data
+description: Small debug training set (semicolon-separated). Used by aml/job.smoke.yml.
+type: uri_file
+path: ../dataset_onlyWithImoUntil2023.csv

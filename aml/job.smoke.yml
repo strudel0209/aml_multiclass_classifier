@@ -1,0 +1,68 @@
+$schema: https://azuremlschemas.azureedge.net/latest/commandJob.schema.json
+# ──────────────────────────────────────────────────────────────────────────────
+# Smoke / debug job — runs on a single GPU, on your existing compute instance.
+# Purpose: end-to-end exercise of train.py inside the AML environment with the
+# fastest possible turnaround so failures surface in minutes, not hours.
+#
+# Submit:
+#   az ml job create -f aml/job.smoke.yml \
+#       --set compute=azureml:<your-compute-instance-name> \
+#       --web --stream
+#
+# Notes:
+#   * `compute` is overridden on the CLI so this file stays portable. A CI
+#     accepts Command Jobs in v2; it just runs one at a time and ignores any
+#     `distribution` block (we omit it here).
+#   * `torchrun --standalone --nproc_per_node=1` keeps train.py's DDP-aware
+#     codepaths active (RANK / WORLD_SIZE set) with a single worker, so the
+#     smoke run exercises the same control flow as the 4-GPU production job.
+#   * `--epochs 1 --min-examples 50` makes the run finish in a few minutes on
+#     a single T4. Bump them when you want a real eval signal.
+# ──────────────────────────────────────────────────────────────────────────────
+
+display_name: imo-smoke-single-gpu
+experiment_name: imo-extractor-debug
+description: 1-GPU smoke test of train.py for fast debugging.
+
+code: ../
+command: >-
+  torchrun --standalone --nproc_per_node=1 train.py
+  --data ${{inputs.training_data}}
+  --csv-sep ';'
+  --model-name answerdotai/ModernBERT-base
+  --arch-alias modernbert-base-smoke
+  --registered-model-name imo-extractor-smoke
+  --output-dir ${{outputs.model_dir}}
+  --epochs 1
+  --batch-size 4
+  --eval-batch 8
+  --lr 6e-5
+  --max-seq-len 512
+  --min-examples 50
+
+environment: azureml:imo-classifier-train-env@latest
+
+inputs:
+  training_data:
+    type: uri_file
+    path: azureml:email-imo-training-data@latest
+    mode: ro_mount
+
+outputs:
+  model_dir:
+    type: uri_folder
+
+environment_variables:
+  # Hugging Face cache lands in the job's outputs working dir so we don't
+  # blow up the CI's home volume between runs.
+  HF_HOME: /tmp/hf
+  TRANSFORMERS_VERBOSITY: info
+  # Surface NCCL issues fast on the rare chance we re-enable multi-GPU here.
+  NCCL_DEBUG: WARN
+  TORCH_NCCL_ASYNC_ERROR_HANDLING: "1"
+  MLFLOW_EXPERIMENT_NAME: imo-extractor-debug
+
+tags:
+  task: imo-classification
+  purpose: smoke
+  dataset: email-imo-training-data
