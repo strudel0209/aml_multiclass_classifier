@@ -1,5 +1,6 @@
 azure-ai-ml
 azure-identity
+python-dotenv
 datasets>=4.7.0
 transformers>=4.46.0      # 4.46+ required for ModernBERT-base support
 accelerate>=1.13.0
