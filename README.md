@@ -220,7 +220,16 @@ Run the **"AML Command Job: Full-Scale GPU Training"** cell. It does four things
 1. **Resolves the compute** — uses `AML_TRAIN_COMPUTE` if you set it, otherwise auto-creates the `gpu-t4-single` cluster (`Standard_NC16as_T4_v3`, 1× T4, scales to zero).
 2. **Registers the training CSV** as an immutable versioned data asset (`email-imo-training-data:1`).
 3. **Builds the training environment** from `conda.yml` on the `openmpi4.1.0-cuda11.8` base image (the CUDA runtime itself ships inside the `torch>=2.10` wheel).
-4. **Submits the job** — launches `torchrun --standalone --nproc_per_node=1 train.py ... --epochs 15 --batch-size 8 --lr 3e-5 --max-seq-len 2048 --min-examples 20`, then streams the logs into the notebook.
+4. **Submits the job** — launches `torchrun --standalone --nproc_per_node=1 train.py ... --epochs 15 --batch-size 32 --lr 3e-5 --max-seq-len 2048 --min-examples 20`, then streams the logs into the notebook.
+
+> **⚠ Set `--batch-size` to match your GPU.** The per-device batch size is the one training argument that depends on the compute you run on — `train.py` auto-selects the precision (bf16 on A100/Ampere+, fp16 on T4, fp32 on CPU), so only the batch size needs to change. The cell ships **two `command=(...)` blocks**: keep the one that matches your GPU active and leave the other commented out.
+>
+> | Compute | Per-device `--batch-size` | Active by default? |
+> |---|---:|---|
+> | A100 40/80 GB (Ampere) | `32` | ✅ yes — the default block |
+> | 1× T4 16 GB (Turing) | `8` | ⬜ commented block — uncomment it (and comment the A100 block) if you point `AML_TRAIN_COMPUTE` back at a T4 |
+>
+> `--lr` is held at `3e-5` for both to match prior single-GPU runs; you can scale it up (≈ `6e-5`) if you want to exploit the larger A100 batch more aggressively.
 
 You'll see `✓ Job submitted: <name>` and a **Studio URL** — click it to follow along in the browser.
 
